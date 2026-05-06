@@ -1,0 +1,53 @@
+name: 트윗 발행 (5회/일)
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 22:00 UTC = 07:00 KST (육아)
+    - cron: '0 1 * * *'    # 01:00 UTC = 10:00 KST (복지)
+    - cron: '0 3 * * *'    # 03:00 UTC = 12:00 KST (재테크)
+    - cron: '0 10 * * *'   # 10:00 UTC = 19:00 KST (건강)
+    - cron: '0 13 * * *'   # 13:00 UTC = 22:00 KST (랜덤)
+  workflow_dispatch:        # 수동 실행 허용
+
+concurrency:
+  group: xauto
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Python 3.11 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 트윗 발행
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          LOG_LEVEL: INFO
+        run: python post_one.py
+
+      - name: DB 커밋 및 푸시
+        run: |
+          git config user.name "xauto-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add xauto.db
+          git diff --staged --quiet || git commit -m "chore: 트윗 발행 $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git push

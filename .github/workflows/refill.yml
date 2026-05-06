@@ -1,0 +1,50 @@
+name: 큐 보충 (매일 06:00 KST)
+
+on:
+  schedule:
+    - cron: '0 21 * * *'   # 21:00 UTC = 06:00 KST
+  workflow_dispatch:        # 수동 실행 허용
+
+concurrency:
+  group: xauto
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Python 3.11 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 큐 보충 실행
+        env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          WELFARE_API_ENDPOINT: https://apis.data.go.kr/B554287/NationalWelfareInformationsV001
+          LOG_LEVEL: INFO
+        run: python main.py
+
+      - name: DB 커밋 및 푸시
+        run: |
+          git config user.name "xauto-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add xauto.db
+          git diff --staged --quiet || git commit -m "chore: 큐 보충 $(date -u +'%Y-%m-%d')"
+          git push
