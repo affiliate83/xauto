@@ -1,6 +1,7 @@
-"""X(Twitter) API v2 발행 모듈 — tweepy OAuth 1.0a + 이미지 업로드"""
+"""X(Twitter) API v2 발행 모듈 — 단일 트윗 + 스레드 지원"""
 import os
 import sys
+import time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -10,8 +11,8 @@ from utils import logger
 
 load_dotenv()
 
-_client = None   # tweepy.Client (v2) — 트윗 발행
-_api_v1 = None   # tweepy.API (v1.1) — 미디어 업로드
+_client = None
+_api_v1 = None
 
 
 def _get_credentials():
@@ -40,19 +41,6 @@ def _get_x_client() -> tweepy.Client | None:
     return _client
 
 
-def _get_api_v1() -> tweepy.API | None:
-    """미디어 업로드용 v1.1 API (tweepy.Client는 미디어 업로드 미지원)"""
-    global _api_v1
-    if _api_v1 is not None:
-        return _api_v1
-    api_key, api_secret, access_token, access_token_secret = _get_credentials()
-    if not all([api_key, api_secret, access_token, access_token_secret]):
-        return None
-    auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_token_secret)
-    _api_v1 = tweepy.API(auth)
-    return _api_v1
-
-
 def verify_credentials() -> bool:
     client = _get_x_client()
     if client is None:
@@ -68,33 +56,18 @@ def verify_credentials() -> bool:
         return False
 
 
-def upload_image(image_path: Path) -> str | None:
-    """이미지를 X에 업로드하고 media_id 반환"""
-    api = _get_api_v1()
-    if api is None:
-        return None
-    try:
-        media = api.media_upload(filename=str(image_path))
-        logger.info(f"[이미지 업로드 성공] media_id={media.media_id_string}")
-        return media.media_id_string
-    except Exception as e:
-        logger.warning(f"[이미지 업로드 실패] {e}")
-        return None
-
-
-def post_tweet(tweet_text: str, image_path: Path = None) -> str | None:
-    """트윗 발행. image_path 지정 시 이미지 카드 포함."""
+def post_tweet(tweet_text: str) -> str | None:
+    """단일 트윗 발행"""
     client = _get_x_client()
     if client is None:
         return None
-
     try:
         response = client.create_tweet(text=tweet_text, user_auth=True)
         tweet_id = str(response.data['id'])
         logger.info(f"[트윗 발행 성공] id={tweet_id} | {tweet_text[:40]}...")
         return tweet_id
     except tweepy.errors.TooManyRequests:
-        logger.error("[X API] Rate limit 초과 — 잠시 후 재시도 필요")
+        logger.error("[X API] Rate limit 초과")
         return None
     except tweepy.errors.TweepyException as e:
         logger.error(f"[트윗 발행 실패] {e}")
@@ -102,6 +75,42 @@ def post_tweet(tweet_text: str, image_path: Path = None) -> str | None:
     except Exception as e:
         logger.error(f"[트윗 발행 오류] {e}")
         return None
+
+
+def post_thread(tweets: list[str]) -> str | None:
+    """스레드 발행 — 트윗들을 순서대로 연결, 첫 트윗 ID 반환"""
+    client = _get_x_client()
+    if client is None:
+        return None
+
+    reply_to_id = None
+    first_tweet_id = None
+
+    for i, text in enumerate(tweets):
+        try:
+            kwargs = {'text': text, 'user_auth': True}
+            if reply_to_id:
+                kwargs['in_reply_to_tweet_id'] = int(reply_to_id)
+
+            response = client.create_tweet(**kwargs)
+            tweet_id = str(response.data['id'])
+
+            if i == 0:
+                first_tweet_id = tweet_id
+            reply_to_id = tweet_id
+            logger.info(f"  [스레드 {i+1}/{len(tweets)}] id={tweet_id} | {text[:30]}...")
+
+            if i < len(tweets) - 1:
+                time.sleep(2)
+
+        except tweepy.errors.TooManyRequests:
+            logger.error("[X API] Rate limit 초과 — 스레드 중단")
+            break
+        except tweepy.errors.TweepyException as e:
+            logger.error(f"[스레드 발행 실패] {i+1}번째 트윗: {e}")
+            break
+
+    return first_tweet_id
 
 
 if __name__ == "__main__":

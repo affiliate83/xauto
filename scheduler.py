@@ -16,7 +16,6 @@ from apscheduler.triggers.cron import CronTrigger
 import db
 import main as pipeline
 import poster.x_api as x_api
-import image_maker.card as card_maker
 from utils import logger
 
 KST = pytz.timezone('Asia/Seoul')
@@ -48,19 +47,10 @@ def post_job(preferred_niche: str = None):
 
     tweet = tweets[0]
 
-    # 이미지 카드 생성
-    card_path = None
-    try:
-        card_path = card_maker.make_card(
-            niche=tweet['niche'],
-            tweet_text=tweet['tweet_text'],
-            card_id=str(tweet['id']),
-        )
-        logger.info(f"  [카드 생성] {card_path.name}")
-    except Exception as e:
-        logger.warning(f"  [카드 생성 실패, 텍스트만 발행] {e}")
-
-    tweet_id = x_api.post_tweet(tweet['tweet_text'], image_path=card_path)
+    if tweet.get('is_thread'):
+        tweet_id = x_api.post_thread(tweet['thread_tweets'])
+    else:
+        tweet_id = x_api.post_tweet(tweet['tweet_text'])
 
     if tweet_id:
         db.mark_content_posted(tweet['tweet_text'])

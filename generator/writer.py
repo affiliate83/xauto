@@ -1,7 +1,8 @@
-"""Claude Haiku로 X 트윗 생성"""
+"""Claude Haiku로 X 스레드 생성 — WP_CRAWLER_ENRICHMENT_GUIDE 패턴 적용"""
 import os
 import re
 import time
+import json
 import anthropic
 from dotenv import load_dotenv
 from utils import logger, truncate_to_x_limit
@@ -9,7 +10,10 @@ from generator.prompts import NICHE_PROMPTS
 
 load_dotenv()
 
+# 코드 펜스 제거 (가이드: 프롬프트 명시 + 이중 안전망)
 _FENCE_RE = re.compile(r'```[^\n`]*\n?|```\s*$', re.MULTILINE)
+# [TWEET1] ~ [TWEET4] 마커 분리
+_MARKER_RE = re.compile(r'\[TWEET\d\]', re.IGNORECASE)
 
 _client = None
 
@@ -25,7 +29,34 @@ def _get_client() -> anthropic.Anthropic | None:
     return _client
 
 
-def generate_tweet(niche: str, title: str, description: str, link: str = '') -> str | None:
+def _parse_thread(text: str) -> list[str]:
+    """마커 줄 기준 스레드 분리 — [TWEET1] 또는 TWEET1 단독 줄 모두 처리"""
+    text = _FENCE_RE.sub('', text).strip()
+    lines = text.split('\n')
+    tweets = []
+    current: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r'^\[?TWEET\s*\d+\]?$', stripped, re.IGNORECASE):
+            if current:
+                tweet = '\n'.join(current).strip()
+                if tweet:
+                    tweets.append(truncate_to_x_limit(tweet, limit=270))
+            current = []
+        else:
+            current.append(line)
+
+    if current:
+        tweet = '\n'.join(current).strip()
+        if tweet:
+            tweets.append(truncate_to_x_limit(tweet, limit=270))
+
+    return tweets
+
+
+def generate_thread(niche: str, title: str, description: str, link: str = '') -> list[str] | None:
+    """스레드 형식 트윗 생성 (4개 연결 트윗)"""
     client = _get_client()
     if client is None:
         return None
@@ -40,14 +71,22 @@ def generate_tweet(niche: str, title: str, description: str, link: str = '') -> 
     try:
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=450,
+            max_tokens=900,
             messages=[{"role": "user", "content": prompt}]
         )
         text = message.content[0].text.strip()
-        text = _FENCE_RE.sub('', text).strip()
-        text = truncate_to_x_limit(text)
-        logger.info(f"  [트윗 생성] {len(text)}자 | {text[:40]}...")
-        return text
+        tweets = _parse_thread(text)
+
+        if len(tweets) < 2:
+            # 마커 파싱 실패 → 단일 트윗으로 fallback
+            single = _FENCE_RE.sub('', text).strip()
+            single = truncate_to_x_limit(single)
+            logger.info(f"  [단일 트윗 fallback] {len(single)}자 | {single[:40]}...")
+            return [single]
+
+        logger.info(f"  [스레드 생성] {len(tweets)}개 | {tweets[0][:40]}...")
+        return tweets
+
     except Exception as e:
         logger.warning(f"  [Claude 생성 실패] {e}")
         return None
@@ -56,19 +95,19 @@ def generate_tweet(niche: str, title: str, description: str, link: str = '') -> 
 def generate_batch(articles: list[dict]) -> list[dict]:
     results = []
     for article in articles:
-        tweet_text = generate_tweet(
+        threads = generate_thread(
             niche=article['niche'],
             title=article['title'],
             description=article['description'],
             link=article.get('link', ''),
         )
-        if tweet_text:
+        if threads:
             results.append({
-                'niche':      article['niche'],
-                'tweet_text': tweet_text,
+                'niche':        article['niche'],
+                'tweet_text':   json.dumps(threads, ensure_ascii=False),
                 'source_title': article['title'],
                 'source_link':  article.get('link', ''),
-                'service_id':   article.get('service_id', ''),  # welfare용
+                'service_id':   article.get('service_id', ''),
             })
         time.sleep(3)
     return results

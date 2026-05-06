@@ -1,5 +1,5 @@
 """
-GitHub Actions 용 단건 트윗 발행 스크립트
+GitHub Actions 용 단건 트윗/스레드 발행 스크립트
 KST 시간 기준으로 니치 자동 선택 후 큐에서 한 건 발행
 """
 import sys
@@ -46,7 +46,11 @@ def main():
         return
 
     tweet = tweets[0]
-    tweet_id = x_api.post_tweet(tweet['tweet_text'])
+
+    if tweet.get('is_thread'):
+        tweet_id = x_api.post_thread(tweet['thread_tweets'])
+    else:
+        tweet_id = x_api.post_tweet(tweet['tweet_text'])
 
     if tweet_id:
         db.mark_content_posted(tweet['tweet_text'])
