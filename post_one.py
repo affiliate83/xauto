@@ -47,10 +47,11 @@ def main():
 
     tweet = tweets[0]
 
+    thread_tweets = tweet.get('thread_tweets', [tweet['tweet_text']])
     if tweet.get('is_thread'):
-        tweet_id = x_api.post_thread(tweet['thread_tweets'])
+        tweet_id = x_api.post_thread(thread_tweets)
     else:
-        tweet_id = x_api.post_tweet(tweet['tweet_text'])
+        tweet_id = x_api.post_tweet(thread_tweets[0])
 
     if tweet_id:
         db.mark_content_posted(tweet['tweet_text'])

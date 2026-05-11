@@ -30,8 +30,11 @@ def _get_client() -> anthropic.Anthropic | None:
 
 
 def _parse_thread(text: str) -> list[str]:
-    """마커 줄 기준 스레드 분리 — [TWEET1] 또는 TWEET1 단독 줄 모두 처리"""
+    """마커 줄 기준 스레드 분리 — **[TWEET1]**, [TWEET1], TWEET1 모두 처리"""
     text = _FENCE_RE.sub('', text).strip()
+    # 마크다운 볼드/이탤릭으로 감싼 마커 정규화: **[TWEET1]** → [TWEET1]
+    text = re.sub(r'\*+(\[?TWEET\s*\d+\]?)\*+', r'\1', text, flags=re.IGNORECASE)
+
     lines = text.split('\n')
     tweets = []
     current: list[str] = []

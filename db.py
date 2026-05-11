@@ -98,15 +98,17 @@ def get_pending_tweets(limit: int = 5, preferred_niche: str = None) -> list[dict
     result = []
     for r in rows:
         d = dict(r)
-        # 스레드(JSON 배열) 여부 판별
         try:
             parsed = json.loads(d['tweet_text'])
-            if isinstance(parsed, list) and len(parsed) > 1:
-                d['is_thread'] = True
+            if isinstance(parsed, list) and parsed:
                 d['thread_tweets'] = parsed
+                d['is_thread'] = len(parsed) > 1
             else:
+                d['thread_tweets'] = [d['tweet_text']]
                 d['is_thread'] = False
         except (json.JSONDecodeError, ValueError):
+            # 구형 plain-text 트윗
+            d['thread_tweets'] = [d['tweet_text']]
             d['is_thread'] = False
         result.append(d)
     return result
