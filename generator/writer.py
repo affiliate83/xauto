@@ -16,6 +16,20 @@ _FENCE_RE = re.compile(r'```[^\n`]*\n?|```\s*$', re.MULTILINE)
 _MARKER_RE = re.compile(r'\[TWEET\d\]', re.IGNORECASE)
 
 _client = None
+_COMMUNITY_TAGS = '#블루레이디 #블루레이디_트친소'
+
+
+def _ensure_community_tags(tweets: list[str]) -> list[str]:
+    """마지막 트윗에 #블루레이디 태그가 없으면 코드에서 강제 추가 (280자 내 보장)"""
+    if not tweets:
+        return tweets
+    last = tweets[-1]
+    if '#블루레이디' not in last:
+        suffix = '\n' + _COMMUNITY_TAGS
+        max_body = 280 - len(suffix)
+        body = last[:max_body] if len(last) > max_body else last
+        tweets[-1] = body + suffix
+    return tweets
 
 
 def _get_client() -> anthropic.Anthropic | None:
@@ -85,8 +99,9 @@ def generate_thread(niche: str, title: str, description: str, link: str = '') ->
             single = _FENCE_RE.sub('', text).strip()
             single = truncate_to_x_limit(single)
             logger.info(f"  [단일 트윗 fallback] {len(single)}자 | {single[:40]}...")
-            return [single]
+            return _ensure_community_tags([single])
 
+        tweets = _ensure_community_tags(tweets)
         logger.info(f"  [스레드 생성] {len(tweets)}개 | {tweets[0][:40]}...")
         return tweets
 
